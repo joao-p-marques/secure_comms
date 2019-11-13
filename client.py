@@ -5,13 +5,18 @@ import argparse
 import coloredlogs, logging
 import os
 
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import dh
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.serialization import Encoding, ParameterFormat, PublicFormat, load_pem_public_key
+
 logger = logging.getLogger('root')
 
 STATE_CONNECT = 0
 STATE_OPEN = 1
 STATE_DATA = 2
 STATE_CLOSE = 3
-
 
 class ClientProtocol(asyncio.Protocol):
     """
@@ -29,6 +34,7 @@ class ClientProtocol(asyncio.Protocol):
         self.loop = loop
         self.state = STATE_CONNECT  # Initial State
         self.buffer = ''  # Buffer to receive data chunks
+        self.key = None
 
     def connection_made(self, transport) -> None:
         """
@@ -40,12 +46,12 @@ class ClientProtocol(asyncio.Protocol):
         self.transport = transport
 
         logger.debug('Connected to Server')
-        
-        message = {'type': 'OPEN', 'file_name': self.file_name}
-        self._send(message)
 
         self.state = STATE_OPEN
-
+        
+    def open_file(self):
+        message = {'type': 'OPEN', 'file_name': self.file_name}
+        self._send(message)
 
     def data_received(self, data: str) -> None:
         """
@@ -93,7 +99,16 @@ class ClientProtocol(asyncio.Protocol):
 
         mtype = message.get('type', None)
 
-        if mtype == 'OK':  # Server replied OK. We can advance the state
+        if mtype == 'DH_INIT':
+            p = message.get('data').get('p')
+            g = message.get('data').get('g')
+            self.diffie_hellman_gen_Y(p, g)
+            return
+        elif mtype == 'DH_KEY_EXCHANGE':
+            pub_key = message.get('data').get('pub_key')
+            self.get_key(pub_key)
+            self.open_file()
+        elif mtype == 'OK':  # Server replied OK. We can advance the state
             if self.state == STATE_OPEN:
                 logger.info("Channel open")
                 self.send_file(self.file_name)
@@ -103,7 +118,6 @@ class ClientProtocol(asyncio.Protocol):
             else:
                 logger.warning("Ignoring message from server")
             return
-
         elif mtype == 'ERROR':
             logger.warning("Got error from server: {}".format(message.get('data', None)))
         else:
@@ -155,6 +169,54 @@ class ClientProtocol(asyncio.Protocol):
         message_b = (json.dumps(message) + '\r\n').encode()
         self.transport.write(message_b)
 
+    def diffie_hellman_gen_Y(self, p, g):
+        logger.debug("Starting Diffie-Hellman key exchange.")
+        logger.debug("Getting key from params")
+
+        params_numbers = dh.DHParameterNumbers(p,g)
+        parameters = params_numbers.parameters(default_backend())
+
+        # self.a = random.randint(1, 10)
+        # g = DIFFIE_HELLMAN_AGREED_ALPHA
+        # q = DIFFIE_HELLMAN_AGREED_PRIME
+
+        # Y = (g**self.a) % q
+
+        # msg = { 'type' : 'DH_INIT', 'data' : Y }
+
+        # self._send(msg)
+
+        # Generate a private key for use in the exchange.
+        self.private_key = parameters.generate_private_key()
+        self.public_key = self.private_key.public_key()
+
+        msg = { 'type' : 'DH_KEY_EXCHANGE', 
+                'data' : { 
+                    'pub_key' : self.public_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+                    }
+                }
+        self._send(msg)
+
+    def get_key(self, server_pub_key_b):
+
+        logger.debug("Getting shared key")
+
+        server_pub_key = load_pem_public_key(server_pub_key_b.encode(), default_backend())
+
+        shared_key = self.private_key.exchange(server_pub_key)
+
+        # Perform key derivation.
+        derived_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b'handshake data',
+            backend=default_backend()
+        ).derive(shared_key)
+
+        self.key = derived_key
+
+        logger.debug(f'Got key {self.key}')
 
 def main():
     parser = argparse.ArgumentParser(description='Sends files to servers.')
