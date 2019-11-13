@@ -30,6 +30,14 @@ class ClientHandler(asyncio.Protocol):
 		self.storage_dir = storage_dir
 		self.buffer = ''
 		self.peername = ''
+		#Arrays of possible ciphers to take from
+		self.ciphers = ['AES','3DES','Salsa20']
+		self.modes = ['CBC','GCM','EBC']
+		self.sinteses = ['SHA-256','SHA-384','SHA-512']
+		#Chosen cipher by server
+		self.cipher = None
+		self.mode = None
+		self.sintese = None
 
 	def connection_made(self, transport) -> None:
 		"""
@@ -136,6 +144,7 @@ class ClientHandler(asyncio.Protocol):
 			logger.warning("Negotiation impossible, ciphers or modes not allowed or inexistent.")
 			return False
 
+		#Aqui fazer uma escolha hardcoded por ordem de melhor para pior cifra a usar
 		logger.info("Cipher chosen from message: %s" % (message))
 		self._send({'type': 'CIPHER_CHOSEN', 'cipher': 'CI', 'mode': 'MO', 'sintese': 'SI'})
 
@@ -184,6 +193,7 @@ class ClientHandler(asyncio.Protocol):
 		return True
 
 	def process_data(self, message: str) -> bool:
+		#Processar a data repartida, pois os files podem ser demasiado grandes
 		"""
 		Processes a DATA message from the client
 		This message should contain a chunk of the file
