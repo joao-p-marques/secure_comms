@@ -95,6 +95,8 @@ class ClientHandler(asyncio.Protocol):
 			ret = self.process_open(message)
 		elif mtype == 'DATA':
 			ret = self.process_data(message)
+		elif mtype == 'NEGOTIATE':
+			ret = self.process_negotiate(message)
 		elif mtype == 'CLOSE':
 			ret = self.process_close(message)
 		else:
@@ -115,6 +117,29 @@ class ClientHandler(asyncio.Protocol):
 			self.state = STATE_CLOSE
 			self.transport.close()
 
+	def process_negotiate(self, message: str) -> bool:
+		"""
+		Processes a NEGOTIATE message from the client
+		This message should contain the filename
+
+		:param message: The message to process
+		:return: Boolean indicating the success of the operation
+		"""
+		logger.debug("Process Open: {}".format(message))
+
+		if self.state != STATE_CONNECT:
+			logger.warning("Invalid state. Discarding")
+			return False
+
+		#verificar esta condiçao pq podemos ter cifras que nao precisem dos modos ou assim
+		if not 'ciphers' in message or not 'modes' in message or not 'sinteses' in message:
+			logger.warning("Negotiation impossible, ciphers or modes not allowed or inexistent.")
+			return False
+
+		logger.info("Cipher chosen from message: %s" % (message))
+		self._send({'type': 'CIPHER_CHOSEN', 'cipher': 'CI', 'mode': 'MO', 'sintese': 'SI'})
+
+		return True
 
 	def process_open(self, message: str) -> bool:
 		"""
@@ -157,7 +182,6 @@ class ClientHandler(asyncio.Protocol):
 		self.file_path = file_path
 		self.state = STATE_OPEN
 		return True
-
 
 	def process_data(self, message: str) -> bool:
 		"""
