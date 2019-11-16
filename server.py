@@ -40,6 +40,15 @@ class ClientHandler(asyncio.Protocol):
 
         self.parameters = None
         self.private_key = None
+        #Arrays of possible ciphers to take from
+        self.ciphers = ['AES','3DES','Salsa20']
+        self.modes = ['CBC','GCM','EBC']
+        self.sinteses = ['SHA-256','SHA-384','SHA-512']
+
+        #Chosen cipher by server
+        self.cipher = None
+        self.mode = None
+        self.hash_function = None
 
     def connection_made(self, transport) -> None:
         """
@@ -115,6 +124,8 @@ class ClientHandler(asyncio.Protocol):
             ret = self.process_data(message)
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
+        elif mtype == 'NEGOTIATE':
+            ret = self.process_negotiate(message)
         else:
             logger.warning("Invalid message type: {}".format(message['type']))
             ret = False
@@ -297,6 +308,77 @@ class ClientHandler(asyncio.Protocol):
 
         logger.debug(f'Got key {self.key}')
         return True
+
+    def process_negotiate(self, message: str) -> bool:
+        """
+        Processes a NEGOTIATE message from the client
+        This message should contain the filename
+
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
+        logger.debug("Process Open: {}".format(message))
+
+        if self.state != STATE_CONNECT:
+            logger.warning("Invalid state. Discarding")
+            return False
+
+        #verificar esta condiçao pq podemos ter cifras que nao precisem dos modos ou assim
+        if (not 'ciphers' in message 
+                or not 'modes' in message 
+                or not 'sinteses' in message
+            ):
+                logger.warning("Negotiation impossible, ciphers or modes not allowed or inexistent.")
+                return False
+
+        #Aqui fazer uma escolha hardcoded por ordem de melhor para pior cifra a usar
+        logger.info("Cipher chosen from message: %s" % (message))
+
+        ret = self.choose_algo(message.get('ciphers'), 
+                message.get('modes'),
+                message.get('sinteses'))
+
+        self._send(
+                {
+                    'type': 'CIPHER_CHOSEN', 
+                    'cipher': self.cipher, 
+                    'mode': self.mode, 
+                    'sintese': self.hash_function
+                }
+            )
+
+        return ret
+
+    def choose_algo(self, ciphers, modes, hash_functions):
+        # choose cipher
+        if 'ChaCha20' in ciphers:
+            self.cipher =  'ChaCha20'
+        elif 'AES' in ciphers:
+            self.cipher = 'AES'
+        else:
+            logger.error("Algo not supported")
+            return False
+
+        # choose mode
+        if 'GCM' in modes:
+            self.mode = 'GCM'
+        elif 'CBC' in modes:
+            self.mode = 'CBC'
+        else:
+            logger.error("Algo not supported")
+            return False
+
+        # choose hash_function
+        if 'SHA-512' in hash_functions:
+            self.hash_function = 'SHA-512'
+        elif 'SHA-256' in hash_functions:
+            self.hash_function = 'SHA-256'
+        else:
+            logger.error("Algo not supported")
+            return False
+
+        return True
+
 
 def main():
     global storage_dir

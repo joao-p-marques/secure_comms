@@ -4,6 +4,7 @@ import base64
 import argparse
 import coloredlogs, logging
 import os
+import random
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
@@ -35,6 +36,14 @@ class ClientProtocol(asyncio.Protocol):
         self.state = STATE_CONNECT  # Initial State
         self.buffer = ''  # Buffer to receive data chunks
         self.key = None
+        #Arrays of possible ciphers to take from
+        self.ciphers = ['AES','3DES','Salsa20']
+        self.modes = ['CBC','GCM','EBC']
+        self.sinteses = ['SHA-256','SHA-384','SHA-512']
+        #Chosen cipher by server
+        self.cipher = None
+        self.mode = None
+        self.sintese = None
 
     def connection_made(self, transport) -> None:
         """
@@ -52,6 +61,29 @@ class ClientProtocol(asyncio.Protocol):
     def open_file(self):
         message = {'type': 'OPEN', 'file_name': self.file_name}
         self._send(message)
+
+        #Escolha random de um dos 
+        rand = random.randint(1,5)
+        # ciphers = []
+        # modes = []
+        # sinteses = []
+        # for i in range(rand+1):
+        #     pass
+
+        #Anuncia os modos de cifra que contem
+        message = {'type': 'NEGOTIATE', 'ciphers': self.ciphers[:rand], 'modes': self.modes[:rand], 'sinteses': self.sinteses[:rand]}
+        self._send(message)
+
+    def finalize_algorithm(self,message) -> None:
+        self.cipher = message.get('cipher')
+        self.mode = message.get('mode')
+        self.sintese = message.get('sintese')
+
+    def open_connection(self) -> None:
+        message = {'type': 'OPEN', 'file_name': self.file_name}
+        self._send(message)
+
+        self.state = STATE_OPEN
 
     def data_received(self, data: str) -> None:
         """
@@ -118,6 +150,9 @@ class ClientProtocol(asyncio.Protocol):
             else:
                 logger.warning("Ignoring message from server")
             return
+        elif mtype == 'CIPHER_CHOSEN':
+            self.finalize_algorithm(message)
+            self.open_connection()
         elif mtype == 'ERROR':
             logger.warning("Got error from server: {}".format(message.get('data', None)))
         else:
