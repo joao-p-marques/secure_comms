@@ -36,19 +36,22 @@ class ClientHandler(asyncio.Protocol):
         self.storage_dir = storage_dir
         self.buffer = ''
         self.peername = ''
-
+<<<<<<< HEAD
         self.key = None
 
         self.parameters = None
         self.private_key = None
-
+=======
         #Arrays of possible ciphers to take from
         self.ciphers = ['AES','3DES','Salsa20']
         self.modes = ['CBC','GCM','EBC']
         self.sinteses = ['SHA-256','SHA-384','SHA-512']
 
+        #Chosen cipher by server
+        self.cipher = None
         self.mode = None
         self.hash_function = None
+>>>>>>> negotiate_mode
 
     def connection_made(self, transport) -> None:
         """
@@ -59,6 +62,7 @@ class ClientHandler(asyncio.Protocol):
         """
         self.peername = transport.get_extra_info('peername')
         logger.info('\n\nConnection from {}'.format(self.peername))
+<<<<<<< HEAD
 
         self.transport = transport
         self.state = STATE_CONNECT
@@ -68,6 +72,11 @@ class ClientHandler(asyncio.Protocol):
         if not self.private_key:
             self.diffie_hellman_gen_Y()
 
+=======
+        self.transport = transport
+        self.state = STATE_CONNECT
+
+>>>>>>> negotiate_mode
     def data_received(self, data: bytes) -> None:
         """
         Called when data is received from the client.
@@ -76,6 +85,7 @@ class ClientHandler(asyncio.Protocol):
         :param data: The data that was received. This may not be a complete JSON message
         :return:
         """
+<<<<<<< HEAD
         logger.debug('Received: {}'.format(data))
         try:
             self.buffer += data.decode()
@@ -124,8 +134,6 @@ class ClientHandler(asyncio.Protocol):
             ret = self.process_data(message)
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
-        elif mtype == 'NEGOTIATE':
-            ret = self.process_negotiate(message)
         else:
             logger.warning("Invalid message type: {}".format(message['type']))
             ret = False
@@ -308,6 +316,72 @@ class ClientHandler(asyncio.Protocol):
 
         logger.debug(f'Got key {self.key}')
         return True
+=======
+
+        logger.debug('Received: {}'.format(data))
+        try:
+            self.buffer += data.decode()
+        except:
+            logger.exception('Could not decode data from client')
+
+        idx = self.buffer.find('\r\n')
+
+        while idx >= 0:  # While there are separators
+            frame = self.buffer[:idx + 2].strip()  # Extract the JSON object
+            self.buffer = self.buffer[idx + 2:]  # Removes the JSON object from the buffer
+
+            self.on_frame(frame)  # Process the frame
+            idx = self.buffer.find('\r\n')
+
+        if len(self.buffer) > 4096 * 1024 * 1024:  # If buffer is larger than 4M
+            logger.warning('Buffer to large')
+            self.buffer = ''
+            self.transport.close()
+
+
+    def on_frame(self, frame: str) -> None:
+        """
+        Called when a frame (JSON Object) is extracted
+
+        :param frame: The JSON object to process
+        :return:
+        """
+        #logger.debug("Frame: {}".format(frame))
+
+        try:
+            message = json.loads(frame)
+        except:
+            logger.exception("Could not decode JSON message: {}".format(frame))
+            self.transport.close()
+            return
+
+        mtype = message.get('type', "").upper()
+
+        if mtype == 'OPEN':
+            ret = self.process_open(message)
+        elif mtype == 'DATA':
+            ret = self.process_data(message)
+        elif mtype == 'NEGOTIATE':
+            ret = self.process_negotiate(message)
+        elif mtype == 'CLOSE':
+            ret = self.process_close(message)
+        else:
+            logger.warning("Invalid message type: {}".format(message['type']))
+            ret = False
+
+        if not ret:
+            try:
+                self._send({'type': 'ERROR', 'message': 'See server'})
+            except:
+                pass # Silently ignore
+
+            logger.info("Closing transport")
+            if self.file is not None:
+                    self.file.close()
+                    self.file = None
+
+            self.state = STATE_CLOSE
+            self.transport.close()
 
     def process_negotiate(self, message: str) -> bool:
         """
@@ -349,6 +423,125 @@ class ClientHandler(asyncio.Protocol):
 
         return ret
 
+    def process_open(self, message: str) -> bool:
+        """
+        Processes an OPEN message from the client
+        This message should contain the filename
+
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
+        logger.debug("Process Open: {}".format(message))
+
+        if self.state != STATE_CONNECT:
+            logger.warning("Invalid state. Discarding")
+            return False
+
+        if not 'file_name' in message:
+            logger.warning("No filename in Open")
+            return False
+
+        # Only chars and letters in the filename
+        file_name = re.sub(r'[^\w\.]', '', message['file_name'])
+        file_path = os.path.join(self.storage_dir, file_name)
+        if not os.path.exists("files"):
+            try:
+                os.mkdir("files")
+            except:
+                logger.exception("Unable to create storage directory")
+                return False
+
+        try:
+            self.file = open(file_path, "wb")
+            logger.info("File open")
+        except Exception:
+            logger.exception("Unable to open file")
+            return False
+
+        self._send({'type': 'OK'})
+
+        self.file_name = file_name
+        self.file_path = file_path
+        self.state = STATE_OPEN
+
+        return True
+
+    def process_data(self, message: str) -> bool:
+        #Processar a data repartida, pois os files podem ser demasiado grandes
+
+        """
+        Processes a DATA message from the client
+        This message should contain a chunk of the file
+
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
+
+        logger.debug("Process Data: {}".format(message))
+
+        if self.state == STATE_OPEN:
+            self.state = STATE_DATA
+            # First Packet
+
+        elif self.state == STATE_DATA:
+            # Next packets
+            pass
+
+        else:
+            logger.warning("Invalid state. Discarding")
+            return False
+
+        try:
+            data = message.get('data', None)
+            if data is None:
+                logger.debug("Invalid message. No data found")
+                return False
+
+            bdata = base64.b64decode(message['data'])
+        except:
+            logger.exception("Could not decode base64 content from message.data")
+            return False
+
+        try:
+            self.file.write(bdata)
+            self.file.flush()
+        except:
+            logger.exception("Could not write to file")
+            return False
+
+        return True
+
+    def process_close(self, message: str) -> bool:
+        """
+        Processes a CLOSE message from the client.
+        This message will trigger the termination of this session
+
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
+        logger.debug("Process Close: {}".format(message))
+
+        self.transport.close()
+        if self.file is not None:
+            self.file.close()
+            self.file = None
+
+        self.state = STATE_CLOSE
+
+        return True
+
+
+    def _send(self, message: str) -> None:
+        """
+        Effectively encodes and sends a message
+        :param message:
+        :return:
+        """
+        logger.debug("Send: {}".format(message))
+
+        message_b = (json.dumps(message) + '\r\n').encode()
+        self.transport.write(message_b)
+
     def choose_algo(self, ciphers, modes, hash_functions):
         # choose cipher
         if 'ChaCha20' in ciphers:
@@ -379,6 +572,7 @@ class ClientHandler(asyncio.Protocol):
 
         return True
 
+>>>>>>> negotiate_mode
 
 def main():
     global storage_dir

@@ -35,7 +35,9 @@ class ClientProtocol(asyncio.Protocol):
         self.loop = loop
         self.state = STATE_CONNECT  # Initial State
         self.buffer = ''  # Buffer to receive data chunks
+<<<<<<< HEAD
         self.key = None
+=======
         #Arrays of possible ciphers to take from
         self.ciphers = ['AES','3DES','Salsa20']
         self.modes = ['CBC','GCM','EBC']
@@ -44,6 +46,7 @@ class ClientProtocol(asyncio.Protocol):
         self.cipher = None
         self.mode = None
         self.sintese = None
+>>>>>>> negotiate_mode
 
     def connection_made(self, transport) -> None:
         """
@@ -58,7 +61,12 @@ class ClientProtocol(asyncio.Protocol):
 
         self.state = STATE_OPEN
         
-    def negotiate_algos(self):
+<<<<<<< HEAD
+    def open_file(self):
+        message = {'type': 'OPEN', 'file_name': self.file_name}
+        self._send(message)
+
+=======
         #Escolha random de um dos 
         rand = random.randint(1,5)
         # ciphers = []
@@ -82,6 +90,7 @@ class ClientProtocol(asyncio.Protocol):
 
         self.state = STATE_OPEN
 
+>>>>>>> negotiate_mode
     def data_received(self, data: str) -> None:
         """
         Called when data is received from the server.
@@ -136,8 +145,7 @@ class ClientProtocol(asyncio.Protocol):
         elif mtype == 'DH_KEY_EXCHANGE':
             pub_key = message.get('data').get('pub_key')
             self.get_key(pub_key)
-            self.negotiate_algos()
-            return
+            self.open_file()
         elif mtype == 'OK':  # Server replied OK. We can advance the state
             if self.state == STATE_OPEN:
                 logger.info("Channel open")
@@ -148,10 +156,12 @@ class ClientProtocol(asyncio.Protocol):
             else:
                 logger.warning("Ignoring message from server")
             return
+<<<<<<< HEAD
+=======
         elif mtype == 'CIPHER_CHOSEN':
             self.finalize_algorithm(message)
             self.open_connection()
-            return
+>>>>>>> negotiate_mode
         elif mtype == 'ERROR':
             logger.warning("Got error from server: {}".format(message.get('data', None)))
         else:
