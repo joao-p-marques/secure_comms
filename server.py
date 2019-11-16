@@ -69,23 +69,23 @@ class ClientHandler(asyncio.Protocol):
         """
         logger.debug('Received: {}'.format(data))
         try:
-                self.buffer += data.decode()
+            self.buffer += data.decode()
         except:
-                logger.exception('Could not decode data from client')
+            logger.exception('Could not decode data from client')
 
         idx = self.buffer.find('\r\n')
 
         while idx >= 0:  # While there are separators
-                frame = self.buffer[:idx + 2].strip()  # Extract the JSON object
-                self.buffer = self.buffer[idx + 2:]  # Removes the JSON object from the buffer
+            frame = self.buffer[:idx + 2].strip()  # Extract the JSON object
+            self.buffer = self.buffer[idx + 2:]  # Removes the JSON object from the buffer
 
-                self.on_frame(frame)  # Process the frame
-                idx = self.buffer.find('\r\n')
+            self.on_frame(frame)  # Process the frame
+            idx = self.buffer.find('\r\n')
 
         if len(self.buffer) > 4096 * 1024 * 1024:  # If buffer is larger than 4M
-                logger.warning('Buffer to large')
-                self.buffer = ''
-                self.transport.close()
+            logger.warning('Buffer to large')
+            self.buffer = ''
+            self.transport.close()
 
 
     def on_frame(self, frame: str) -> None:
@@ -98,39 +98,39 @@ class ClientHandler(asyncio.Protocol):
         #logger.debug("Frame: {}".format(frame))
 
         try:
-                message = json.loads(frame)
+            message = json.loads(frame)
         except:
-                logger.exception("Could not decode JSON message: {}".format(frame))
-                self.transport.close()
-                return
+            logger.exception("Could not decode JSON message: {}".format(frame))
+            self.transport.close()
+            return
 
         mtype = message.get('type', "").upper()
 
 
         if mtype == 'DH_KEY_EXCHANGE':
-                ret = self.get_key(message.get('data').get('pub_key'))
+            ret = self.get_key(message.get('data').get('pub_key'))
         elif mtype == 'OPEN':
-                ret = self.process_open(message)
+            ret = self.process_open(message)
         elif mtype == 'DATA':
-                ret = self.process_data(message)
+            ret = self.process_data(message)
         elif mtype == 'CLOSE':
-                ret = self.process_close(message)
+            ret = self.process_close(message)
         else:
-                logger.warning("Invalid message type: {}".format(message['type']))
-                ret = False
+            logger.warning("Invalid message type: {}".format(message['type']))
+            ret = False
         if not ret:
-                try:
-                        self._send({'type': 'ERROR', 'message': 'See server'})
-                except:
-                        pass # Silently ignore
+            try:
+                self._send({'type': 'ERROR', 'message': 'See server'})
+            except:
+                pass # Silently ignore
 
-                logger.info("Closing transport")
-                if self.file is not None:
-                        self.file.close()
-                        self.file = None
+            logger.info("Closing transport")
+            if self.file is not None:
+                self.file.close()
+                self.file = None
 
-                self.state = STATE_CLOSE
-                self.transport.close()
+            self.state = STATE_CLOSE
+            self.transport.close()
 
 
     def process_open(self, message: str) -> bool:
@@ -144,29 +144,29 @@ class ClientHandler(asyncio.Protocol):
         logger.debug("Process Open: {}".format(message))
 
         if self.state != STATE_CONNECT:
-                logger.warning("Invalid state. Discarding")
-                return False
+            logger.warning("Invalid state. Discarding")
+            return False
 
         if not 'file_name' in message:
-                logger.warning("No filename in Open")
-                return False
+            logger.warning("No filename in Open")
+            return False
 
         # Only chars and letters in the filename
         file_name = re.sub(r'[^\w\.]', '', message['file_name'])
         file_path = os.path.join(self.storage_dir, file_name)
         if not os.path.exists("files"):
-                try:
-                        os.mkdir("files")
-                except:
-                        logger.exception("Unable to create storage directory")
-                        return False
+            try:
+                os.mkdir("files")
+            except:
+                logger.exception("Unable to create storage directory")
+                return False
 
         try:
-                self.file = open(file_path, "wb")
-                logger.info("File open")
+            self.file = open(file_path, "wb")
+            logger.info("File open")
         except Exception:
-                logger.exception("Unable to open file")
-                return False
+            logger.exception("Unable to open file")
+            return False
 
         self._send({'type': 'OK'})
 
@@ -187,34 +187,34 @@ class ClientHandler(asyncio.Protocol):
         logger.debug("Process Data: {}".format(message))
 
         if self.state == STATE_OPEN:
-                self.state = STATE_DATA
-                # First Packet
+            self.state = STATE_DATA
+            # First Packet
 
         elif self.state == STATE_DATA:
-                # Next packets
-                pass
+            # Next packets
+            pass
 
         else:
-                logger.warning("Invalid state. Discarding")
-                return False
+            logger.warning("Invalid state. Discarding")
+            return False
 
         try:
-                data = message.get('data', None)
-                if data is None:
-                        logger.debug("Invalid message. No data found")
-                        return False
+            data = message.get('data', None)
+            if data is None:
+                    logger.debug("Invalid message. No data found")
+                    return False
 
-                bdata = base64.b64decode(message['data'])
+            bdata = base64.b64decode(message['data'])
         except:
-                logger.exception("Could not decode base64 content from message.data")
-                return False
+            logger.exception("Could not decode base64 content from message.data")
+            return False
 
         try:
-                self.file.write(bdata)
-                self.file.flush()
+            self.file.write(bdata)
+            self.file.flush()
         except:
-                logger.exception("Could not write to file")
-                return False
+            logger.exception("Could not write to file")
+            return False
 
         return True
 
@@ -231,8 +231,8 @@ class ClientHandler(asyncio.Protocol):
 
         self.transport.close()
         if self.file is not None:
-                self.file.close()
-                self.file = None
+            self.file.close()
+            self.file = None
 
         self.state = STATE_CLOSE
 
