@@ -12,7 +12,6 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.serialization import Encoding, ParameterFormat, PublicFormat, load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric import dh
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 logger = logging.getLogger('root')
 
@@ -37,20 +36,22 @@ class ClientHandler(asyncio.Protocol):
         self.storage_dir = storage_dir
         self.buffer = ''
         self.peername = ''
-
+<<<<<<< HEAD
         self.key = None
 
         self.parameters = None
         self.private_key = None
-
+=======
         #Arrays of possible ciphers to take from
-        self.ciphers = ['AES','3DES','ChaCha20']
-        self.modes = ['CBC','GCM','ECB']
+        self.ciphers = ['AES','3DES','Salsa20']
+        self.modes = ['CBC','GCM','EBC']
         self.sinteses = ['SHA-256','SHA-384','SHA-512']
 
+        #Chosen cipher by server
         self.cipher = None
         self.mode = None
         self.hash_function = None
+>>>>>>> negotiate_mode
 
     def connection_made(self, transport) -> None:
         """
@@ -61,15 +62,21 @@ class ClientHandler(asyncio.Protocol):
         """
         self.peername = transport.get_extra_info('peername')
         logger.info('\n\nConnection from {}'.format(self.peername))
+<<<<<<< HEAD
 
         self.transport = transport
         self.state = STATE_CONNECT
 
-        # if not self.parameters:
-        #     self.diffie_hellman_init()
-        # if not self.private_key:
-        #     self.diffie_hellman_gen_Y()
+        if not self.parameters:
+            self.diffie_hellman_init()
+        if not self.private_key:
+            self.diffie_hellman_gen_Y()
 
+=======
+        self.transport = transport
+        self.state = STATE_CONNECT
+
+>>>>>>> negotiate_mode
     def data_received(self, data: bytes) -> None:
         """
         Called when data is received from the client.
@@ -78,6 +85,7 @@ class ClientHandler(asyncio.Protocol):
         :param data: The data that was received. This may not be a complete JSON message
         :return:
         """
+<<<<<<< HEAD
         logger.debug('Received: {}'.format(data))
         try:
             self.buffer += data.decode()
@@ -117,14 +125,6 @@ class ClientHandler(asyncio.Protocol):
 
         mtype = message.get('type', "").upper()
 
-        if mtype == 'SECURE_MSG':
-            e_data = base64.b64decode(message.get('data'))
-            # logger.debug('Received: {}'.format(e_data))
-            iv = base64.b64decode(message.get('iv'))
-            # print(iv)
-            message = self.sym_decrypt(e_data, iv)
-            message = json.loads(message.decode())
-            mtype = message.get('type', None)
 
         if mtype == 'DH_KEY_EXCHANGE':
             ret = self.get_key(message.get('data').get('pub_key'))
@@ -134,12 +134,6 @@ class ClientHandler(asyncio.Protocol):
             ret = self.process_data(message)
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
-        elif mtype == 'NEGOTIATE':
-            ret = self.process_negotiate(message)
-            if not self.parameters:
-                self.diffie_hellman_init()
-            if not self.private_key:
-                self.diffie_hellman_gen_Y()
         else:
             logger.warning("Invalid message type: {}".format(message['type']))
             ret = False
@@ -272,17 +266,6 @@ class ClientHandler(asyncio.Protocol):
         """
         logger.debug("Send: {}".format(message))
 
-        if self.key and self.cipher:
-            message_c, iv = self.encrypt_data(json.dumps(message).encode())
-            new_message = {
-                    'type' : 'SECURE_MSG',
-                    'data' : message_c,
-                    'iv' : iv
-                    }
-            message_b = (json.dumps(new_message) + '\r\n').encode()
-            self.transport.write(message_b)
-            return
-
         message_b = (json.dumps(message) + '\r\n').encode()
         self.transport.write(message_b)
 
@@ -320,15 +303,10 @@ class ClientHandler(asyncio.Protocol):
 
         shared_key = self.private_key.exchange(client_pub_key)
 
-
-        length = 32
-        if self.cipher == '3DES':
-            length = 16
-
         # Perform key derivation.
         derived_key = HKDF(
             algorithm=hashes.SHA256(),
-            length=length,
+            length=32,
             salt=None,
             info=b'handshake data',
             backend=default_backend()
@@ -338,6 +316,72 @@ class ClientHandler(asyncio.Protocol):
 
         logger.debug(f'Got key {self.key}')
         return True
+=======
+
+        logger.debug('Received: {}'.format(data))
+        try:
+            self.buffer += data.decode()
+        except:
+            logger.exception('Could not decode data from client')
+
+        idx = self.buffer.find('\r\n')
+
+        while idx >= 0:  # While there are separators
+            frame = self.buffer[:idx + 2].strip()  # Extract the JSON object
+            self.buffer = self.buffer[idx + 2:]  # Removes the JSON object from the buffer
+
+            self.on_frame(frame)  # Process the frame
+            idx = self.buffer.find('\r\n')
+
+        if len(self.buffer) > 4096 * 1024 * 1024:  # If buffer is larger than 4M
+            logger.warning('Buffer to large')
+            self.buffer = ''
+            self.transport.close()
+
+
+    def on_frame(self, frame: str) -> None:
+        """
+        Called when a frame (JSON Object) is extracted
+
+        :param frame: The JSON object to process
+        :return:
+        """
+        #logger.debug("Frame: {}".format(frame))
+
+        try:
+            message = json.loads(frame)
+        except:
+            logger.exception("Could not decode JSON message: {}".format(frame))
+            self.transport.close()
+            return
+
+        mtype = message.get('type', "").upper()
+
+        if mtype == 'OPEN':
+            ret = self.process_open(message)
+        elif mtype == 'DATA':
+            ret = self.process_data(message)
+        elif mtype == 'NEGOTIATE':
+            ret = self.process_negotiate(message)
+        elif mtype == 'CLOSE':
+            ret = self.process_close(message)
+        else:
+            logger.warning("Invalid message type: {}".format(message['type']))
+            ret = False
+
+        if not ret:
+            try:
+                self._send({'type': 'ERROR', 'message': 'See server'})
+            except:
+                pass # Silently ignore
+
+            logger.info("Closing transport")
+            if self.file is not None:
+                    self.file.close()
+                    self.file = None
+
+            self.state = STATE_CLOSE
+            self.transport.close()
 
     def process_negotiate(self, message: str) -> bool:
         """
@@ -379,12 +423,129 @@ class ClientHandler(asyncio.Protocol):
 
         return ret
 
+    def process_open(self, message: str) -> bool:
+        """
+        Processes an OPEN message from the client
+        This message should contain the filename
+
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
+        logger.debug("Process Open: {}".format(message))
+
+        if self.state != STATE_CONNECT:
+            logger.warning("Invalid state. Discarding")
+            return False
+
+        if not 'file_name' in message:
+            logger.warning("No filename in Open")
+            return False
+
+        # Only chars and letters in the filename
+        file_name = re.sub(r'[^\w\.]', '', message['file_name'])
+        file_path = os.path.join(self.storage_dir, file_name)
+        if not os.path.exists("files"):
+            try:
+                os.mkdir("files")
+            except:
+                logger.exception("Unable to create storage directory")
+                return False
+
+        try:
+            self.file = open(file_path, "wb")
+            logger.info("File open")
+        except Exception:
+            logger.exception("Unable to open file")
+            return False
+
+        self._send({'type': 'OK'})
+
+        self.file_name = file_name
+        self.file_path = file_path
+        self.state = STATE_OPEN
+
+        return True
+
+    def process_data(self, message: str) -> bool:
+        #Processar a data repartida, pois os files podem ser demasiado grandes
+
+        """
+        Processes a DATA message from the client
+        This message should contain a chunk of the file
+
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
+
+        logger.debug("Process Data: {}".format(message))
+
+        if self.state == STATE_OPEN:
+            self.state = STATE_DATA
+            # First Packet
+
+        elif self.state == STATE_DATA:
+            # Next packets
+            pass
+
+        else:
+            logger.warning("Invalid state. Discarding")
+            return False
+
+        try:
+            data = message.get('data', None)
+            if data is None:
+                logger.debug("Invalid message. No data found")
+                return False
+
+            bdata = base64.b64decode(message['data'])
+        except:
+            logger.exception("Could not decode base64 content from message.data")
+            return False
+
+        try:
+            self.file.write(bdata)
+            self.file.flush()
+        except:
+            logger.exception("Could not write to file")
+            return False
+
+        return True
+
+    def process_close(self, message: str) -> bool:
+        """
+        Processes a CLOSE message from the client.
+        This message will trigger the termination of this session
+
+        :param message: The message to process
+        :return: Boolean indicating the success of the operation
+        """
+        logger.debug("Process Close: {}".format(message))
+
+        self.transport.close()
+        if self.file is not None:
+            self.file.close()
+            self.file = None
+
+        self.state = STATE_CLOSE
+
+        return True
+
+
+    def _send(self, message: str) -> None:
+        """
+        Effectively encodes and sends a message
+        :param message:
+        :return:
+        """
+        logger.debug("Send: {}".format(message))
+
+        message_b = (json.dumps(message) + '\r\n').encode()
+        self.transport.write(message_b)
+
     def choose_algo(self, ciphers, modes, hash_functions):
         # choose cipher
         if 'ChaCha20' in ciphers:
             self.cipher =  'ChaCha20'
-        elif '3DES' in ciphers:
-            self.cipher = '3DES'
         elif 'AES' in ciphers:
             self.cipher = 'AES'
         else:
@@ -392,12 +553,10 @@ class ClientHandler(asyncio.Protocol):
             return False
 
         # choose mode
-        if 'GCM' in modes and self.cipher == 'AES':
+        if 'GCM' in modes:
             self.mode = 'GCM'
         elif 'CBC' in modes:
             self.mode = 'CBC'
-        elif 'ECB' in modes:
-            self.mode = 'ECB'
         else:
             logger.error("Algo not supported")
             return False
@@ -405,8 +564,6 @@ class ClientHandler(asyncio.Protocol):
         # choose hash_function
         if 'SHA-512' in hash_functions:
             self.hash_function = 'SHA-512'
-        elif 'SHA-384' in hash_functions:
-            self.hash_function = 'SHA-384'
         elif 'SHA-256' in hash_functions:
             self.hash_function = 'SHA-256'
         else:
@@ -415,82 +572,7 @@ class ClientHandler(asyncio.Protocol):
 
         return True
 
-    def encrypt_data(self, text):
-        if self.cipher == 'ChaCha20':
-            iv = os.urandom(16)
-            algorithm = algorithms.ChaCha20(self.key, iv)
-        elif self.cipher == "3DES":
-            algorithm = algorithms.TripleDES(self.key)
-        elif self.cipher == "AES":
-            algorithm = algorithms.AES(self.key)
-
-        if not self.cipher == 'ChaCha20':
-            iv = os.urandom(algorithm.block_size)
-            if self.mode == 'CBC':
-                mode = modes.CBC(iv)
-            elif self.mode == "GCM":
-                mode = modes.GCM(iv)
-            elif self.mode == "ECB":
-                iv = None
-                mode = modes.ECB()
-
-        if self.cipher == 'ChaCha20':
-            cipher = Cipher(algorithm, mode=None, backend=default_backend())
-        else:
-            bs = int(algorithm.block_size / 8)
-            print("Block size:", bs) 
-            missing_bytes = bs - (len(text) % bs) 
-            if missing_bytes == 0:
-                missing_bytes = 16
-            print("Padding size:", missing_bytes)
-            padding = bytes([missing_bytes] * missing_bytes)
-            text += padding
-
-            cipher = Cipher(algorithm, mode, backend=default_backend())
-
-        encryptor = cipher.encryptor()
-
-        cryptogram = encryptor.update(text) + encryptor.finalize()
-        print("Cryptogram:", cryptogram)
-
-        return cryptogram, iv
-    
-    def sym_decrypt(self, cryptogram, iv=None):
-        if self.cipher == 'ChaCha20':
-            algorithm = algorithms.ChaCha20(self.key, iv)
-        elif self.cipher == "3DES":
-            algorithm = algorithms.TripleDES(self.key)
-        elif self.cipher == "AES":
-            algorithm = algorithms.AES(self.key)
-
-        if self.mode == 'CBC':
-            mode = modes.CBC(iv)
-        elif self.mode == "GCM":
-            mode = modes.GCM(iv)
-        elif self.mode == "ECB":
-            mode = modes.ECB()
-
-        if self.cipher == 'ChaCha20':
-            cipher = Cipher(algorithm, mode=None, backend=default_backend())
-        else:
-            cipher = Cipher(algorithm, mode, backend=default_backend())
-
-        decryptor = cipher.decryptor()
-        text = decryptor.update(cryptogram) + decryptor.finalize()
-
-        if not self.cipher == 'ChaCha20':
-            padding_size = text[-1]
-            if padding_size >= len(text):
-                raise(Exception("Invalid padding. Larger than text"))
-            elif padding_size > algorithm.block_size / 8:
-                raise(Exception("Invalid padding. Larger than block size"))
-            ntext = text[:-padding_size]
-        else:
-            ntext = text
-
-        print("Decrypted text:", ntext)
-
-        return ntext
+>>>>>>> negotiate_mode
 
 def main():
     global storage_dir
