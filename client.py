@@ -37,8 +37,8 @@ class ClientProtocol(asyncio.Protocol):
         self.buffer = ''  # Buffer to receive data chunks
         self.key = None
         #Arrays of possible ciphers to take from
-        self.ciphers = ['AES','3DES','Salsa20']
-        self.modes = ['CBC','GCM','EBC']
+        self.ciphers = ['AES','3DES','ChaCha20']
+        self.modes = ['CBC','GCM','ECB']
         self.sinteses = ['SHA-256','SHA-384','SHA-512']
         #Chosen cipher by server
         self.cipher = None
@@ -251,6 +251,72 @@ class ClientProtocol(asyncio.Protocol):
         self.key = derived_key
 
         logger.debug(f'Got key {self.key}')
+
+    def encrypt_data(self, text):
+        if self.cipher == 'ChaCha20':
+            algorithm = algorithms.ChaCha20(self.key)
+        elif self.cipher == "3DES":
+            algorithm = algorithms.TripleDES(self.key)
+        elif self.cipher == "AES":
+            algorithm = algorithms.AES(self.key)
+
+        iv = os.urandom(16)
+        if self.mode == 'CBC':
+            mode = modes.CBC(iv)
+        elif self.mode == "GCM":
+            mode = modes.GCM(iv)
+        elif self.mode == "ECB":
+            iv = None
+            mode = modes.ECB()
+
+        bs = int(algorithm.block_size / 8)
+        print("Block size:", bs) 
+        missing_bytes = bs - (len(text) % bs) 
+        if missing_bytes == 0:
+            missing_bytes = 16
+
+        print("Padding size:", missing_bytes)
+
+        padding = bytes([missing_bytes] * missing_bytes)
+        text += padding
+
+        cipher = Cipher(algorithm, mode, backend=backend)
+        encryptor = cipher.encryptor()
+
+        cryptogram = encryptor.update(text) + encryptor.finalize()
+        print("Cryptogram:", cryptogram)
+
+        return cryptogram, iv
+    
+    def sym_decrypt(key, cryptogram, iv=None):
+        if self.cipher == 'ChaCha20':
+            algorithm = algorithms.ChaCha20(self.key)
+        elif self.cipher == "3DES":
+            algorithm = algorithms.TripleDES(self.key)
+        elif self.cipher == "AES":
+            algorithm = algorithms.AES(self.key)
+
+        if self.mode == 'CBC':
+            mode = modes.CBC(iv)
+        elif self.mode == "GCM":
+            mode = modes.GCM(iv)
+        elif self.mode == "ECB":
+            mode = modes.ECB()
+
+        cipher = Cipher(algorithm, mode), backend=backend)
+        decryptor = cipher.decryptor()
+        text = decryptor.update(cryptogram) + decryptor.finalize()
+
+        padding_size = text[-1]
+        if padding_size >= len(text):
+            raise(Exception("Invalid padding. Larger than text"))
+        elif padding_size > algorithm.block_size / 8:
+            raise(Exception("Invalid padding. Larger than block size"))
+
+        ntext = text[:-padding_size]
+        print("Decrypted text:", ntext)
+
+        return ntext
 
 def main():
     parser = argparse.ArgumentParser(description='Sends files to servers.')

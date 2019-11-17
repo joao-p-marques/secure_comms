@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.serialization import Encoding, ParameterFormat, PublicFormat, load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric import dh
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 logger = logging.getLogger('root')
 
@@ -43,8 +44,8 @@ class ClientHandler(asyncio.Protocol):
         self.private_key = None
 
         #Arrays of possible ciphers to take from
-        self.ciphers = ['AES','3DES','Salsa20']
-        self.modes = ['CBC','GCM','EBC']
+        self.ciphers = ['AES','3DES','ChaCha20']
+        self.modes = ['CBC','GCM','ECB']
         self.sinteses = ['SHA-256','SHA-384','SHA-512']
 
         self.mode = None
@@ -353,6 +354,8 @@ class ClientHandler(asyncio.Protocol):
         # choose cipher
         if 'ChaCha20' in ciphers:
             self.cipher =  'ChaCha20'
+        elif '3DES' in ciphers:
+            self.cipher = '3DES'
         elif 'AES' in ciphers:
             self.cipher = 'AES'
         else:
@@ -364,6 +367,8 @@ class ClientHandler(asyncio.Protocol):
             self.mode = 'GCM'
         elif 'CBC' in modes:
             self.mode = 'CBC'
+        elif 'ECB' in modes:
+            self.mode = 'ECB'
         else:
             logger.error("Algo not supported")
             return False
@@ -371,6 +376,8 @@ class ClientHandler(asyncio.Protocol):
         # choose hash_function
         if 'SHA-512' in hash_functions:
             self.hash_function = 'SHA-512'
+        elif 'SHA-384' in hash_functions:
+            self.hash_function = 'SHA-384'
         elif 'SHA-256' in hash_functions:
             self.hash_function = 'SHA-256'
         else:
@@ -379,6 +386,71 @@ class ClientHandler(asyncio.Protocol):
 
         return True
 
+    def encrypt_data(self, text):
+        if self.cipher == 'ChaCha20':
+            algorithm = algorithms.ChaCha20(self.key)
+        elif self.cipher == "3DES":
+            algorithm = algorithms.TripleDES(self.key)
+        elif self.cipher == "AES":
+            algorithm = algorithms.AES(self.key)
+
+        iv = os.urandom(16)
+        if self.mode == 'CBC':
+            mode = modes.CBC(iv)
+        elif self.mode == "GCM":
+            mode = modes.GCM(iv)
+        elif self.mode == "ECB":
+            iv = None
+            mode = modes.ECB()
+
+        bs = int(algorithm.block_size / 8)
+        print("Block size:", bs) 
+        missing_bytes = bs - (len(text) % bs) 
+        if missing_bytes == 0:
+            missing_bytes = 16
+
+        print("Padding size:", missing_bytes)
+
+        padding = bytes([missing_bytes] * missing_bytes)
+        text += padding
+
+        cipher = Cipher(algorithm, mode, backend=backend)
+        encryptor = cipher.encryptor()
+
+        cryptogram = encryptor.update(text) + encryptor.finalize()
+        print("Cryptogram:", cryptogram)
+
+        return cryptogram, iv
+    
+    def sym_decrypt(key, cryptogram, iv=None):
+        if self.cipher == 'ChaCha20':
+            algorithm = algorithms.ChaCha20(self.key)
+        elif self.cipher == "3DES":
+            algorithm = algorithms.TripleDES(self.key)
+        elif self.cipher == "AES":
+            algorithm = algorithms.AES(self.key)
+
+        if self.mode == 'CBC':
+            mode = modes.CBC(iv)
+        elif self.mode == "GCM":
+            mode = modes.GCM(iv)
+        elif self.mode == "ECB":
+            mode = modes.ECB()
+
+        cipher = Cipher(algorithm, mode), backend=backend)
+        decryptor = cipher.decryptor()
+        text = decryptor.update(cryptogram) + decryptor.finalize()
+
+        padding_size = text[-1]
+        if padding_size >= len(text):
+            raise(Exception("Invalid padding. Larger than text"))
+        elif padding_size > algorithm.block_size / 8:
+            raise(Exception("Invalid padding. Larger than block size"))
+
+        ntext = text[:-padding_size]
+        print("Decrypted text:", ntext)
+
+        return ntext
 
 def main():
     global storage_dir
