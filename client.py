@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import dh
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.serialization import Encoding, ParameterFormat, PublicFormat, load_pem_public_key
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 logger = logging.getLogger('root')
 
@@ -35,11 +36,14 @@ class ClientProtocol(asyncio.Protocol):
         self.loop = loop
         self.state = STATE_CONNECT  # Initial State
         self.buffer = ''  # Buffer to receive data chunks
+
         self.key = None
+
         #Arrays of possible ciphers to take from
         self.ciphers = ['AES','3DES','ChaCha20']
         self.modes = ['CBC','GCM','ECB']
         self.sinteses = ['SHA-256','SHA-384','SHA-512']
+
         #Chosen cipher by server
         self.cipher = None
         self.mode = None
@@ -57,6 +61,7 @@ class ClientProtocol(asyncio.Protocol):
         logger.debug('Connected to Server')
 
         self.state = STATE_OPEN
+        self.negotiate_algos()
         
     def negotiate_algos(self):
         #Escolha random de um dos 
@@ -128,6 +133,12 @@ class ClientProtocol(asyncio.Protocol):
 
         mtype = message.get('type', None)
 
+        if mtype == 'SECURE_MSG':
+            e_data = json.loads(message.get('data').decode())
+            iv = message.get('iv')
+            message = self.sym_decrypt(e_data, iv)
+            mtype = message.get('type', None)
+
         if mtype == 'DH_INIT':
             p = message.get('data').get('p')
             g = message.get('data').get('g')
@@ -136,7 +147,6 @@ class ClientProtocol(asyncio.Protocol):
         elif mtype == 'DH_KEY_EXCHANGE':
             pub_key = message.get('data').get('pub_key')
             self.get_key(pub_key)
-            self.negotiate_algos()
             return
         elif mtype == 'OK':  # Server replied OK. We can advance the state
             if self.state == STATE_OPEN:
@@ -200,6 +210,17 @@ class ClientProtocol(asyncio.Protocol):
         """
         logger.debug("Send: {}".format(message))
 
+        if self.key and self.cipher:
+            message_c, iv = self.encrypt_data(json.dumps(message).encode())
+            new_message = {
+                    'type' : 'SECURE_MSG',
+                    'data' : message_c,
+                    'iv' : iv
+                    }
+            message_b = (json.dumps(new_message) + '\r\n').encode()
+            self.transport.write(message_b)
+            return
+
         message_b = (json.dumps(message) + '\r\n').encode()
         self.transport.write(message_b)
 
@@ -253,14 +274,15 @@ class ClientProtocol(asyncio.Protocol):
         logger.debug(f'Got key {self.key}')
 
     def encrypt_data(self, text):
+        iv = os.urandom(16)
+
         if self.cipher == 'ChaCha20':
-            algorithm = algorithms.ChaCha20(self.key)
+            algorithm = algorithms.ChaCha20(self.key, iv)
         elif self.cipher == "3DES":
             algorithm = algorithms.TripleDES(self.key)
         elif self.cipher == "AES":
             algorithm = algorithms.AES(self.key)
 
-        iv = os.urandom(16)
         if self.mode == 'CBC':
             mode = modes.CBC(iv)
         elif self.mode == "GCM":
@@ -269,18 +291,22 @@ class ClientProtocol(asyncio.Protocol):
             iv = None
             mode = modes.ECB()
 
-        bs = int(algorithm.block_size / 8)
-        print("Block size:", bs) 
-        missing_bytes = bs - (len(text) % bs) 
-        if missing_bytes == 0:
-            missing_bytes = 16
+        if self.cipher == 'ChaCha20':
+            cipher = Cipher(algorithm, mode=None, backend=default_backend())
+        else:
+            bs = int(algorithm.block_size / 8)
+            print("Block size:", bs) 
+            missing_bytes = bs - (len(text) % bs) 
+            if missing_bytes == 0:
+                missing_bytes = 16
+            print("Padding size:", missing_bytes)
+            padding = bytes([missing_bytes] * missing_bytes)
+            text += padding
 
-        print("Padding size:", missing_bytes)
+            cipher = Cipher(algorithm, mode, backend=default_backend())
 
-        padding = bytes([missing_bytes] * missing_bytes)
-        text += padding
+        encryptor = cipher.encryptor()
 
-        cipher = Cipher(algorithm, mode, backend=backend)
         encryptor = cipher.encryptor()
 
         cryptogram = encryptor.update(text) + encryptor.finalize()
@@ -303,17 +329,24 @@ class ClientProtocol(asyncio.Protocol):
         elif self.mode == "ECB":
             mode = modes.ECB()
 
-        cipher = Cipher(algorithm, mode), backend=backend)
+        if self.cipher == 'ChaCha20':
+            cipher = Cipher(algorithm, mode=None, backend=default_backend())
+        else:
+            cipher = Cipher(algorithm, mode, backend=default_backend())
+
         decryptor = cipher.decryptor()
         text = decryptor.update(cryptogram) + decryptor.finalize()
 
-        padding_size = text[-1]
-        if padding_size >= len(text):
-            raise(Exception("Invalid padding. Larger than text"))
-        elif padding_size > algorithm.block_size / 8:
-            raise(Exception("Invalid padding. Larger than block size"))
+        if not self.cipher == 'ChaCha20':
+            padding_size = text[-1]
+            if padding_size >= len(text):
+                raise(Exception("Invalid padding. Larger than text"))
+            elif padding_size > algorithm.block_size / 8:
+                raise(Exception("Invalid padding. Larger than block size"))
+            ntext = text[:-padding_size]
+        else:
+            ntext = text
 
-        ntext = text[:-padding_size]
         print("Decrypted text:", ntext)
 
         return ntext
