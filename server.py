@@ -118,9 +118,12 @@ class ClientHandler(asyncio.Protocol):
         mtype = message.get('type', "").upper()
 
         if mtype == 'SECURE_MSG':
-            e_data = json.loads(message.get('data').decode())
-            iv = message.get('iv')
+            e_data = base64.b64decode(message.get('data'))
+            # logger.debug('Received: {}'.format(e_data))
+            iv = base64.b64decode(message.get('iv'))
+            # print(iv)
             message = self.sym_decrypt(e_data, iv)
+            message = json.loads(message.decode())
             mtype = message.get('type', None)
 
         if mtype == 'DH_KEY_EXCHANGE':
@@ -452,7 +455,7 @@ class ClientHandler(asyncio.Protocol):
 
         return cryptogram, iv
     
-    def sym_decrypt(key, cryptogram, iv=None):
+    def sym_decrypt(self, cryptogram, iv=None):
         if self.cipher == 'ChaCha20':
             algorithm = algorithms.ChaCha20(self.key, iv)
         elif self.cipher == "3DES":

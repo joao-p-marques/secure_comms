@@ -214,9 +214,11 @@ class ClientProtocol(asyncio.Protocol):
             message_c, iv = self.encrypt_data(json.dumps(message).encode())
             new_message = {
                     'type' : 'SECURE_MSG',
-                    'data' : message_c.decode('ascii', 'ignore'),
-                    'iv' : iv
+                    'data' : base64.b64encode(message_c).decode(),
+                    'iv' : base64.b64encode(iv).decode()
                     }
+
+            logger.debug("Send: {}".format(new_message))
             message_b = (json.dumps(new_message) + '\r\n').encode()
             self.transport.write(message_b)
             return
@@ -278,6 +280,7 @@ class ClientProtocol(asyncio.Protocol):
         logger.debug(f'Got key {self.key}')
 
     def encrypt_data(self, text):
+        iv = None
         if self.cipher == 'ChaCha20':
             iv = os.urandom(16)
             algorithm = algorithms.ChaCha20(self.key, iv)
@@ -314,10 +317,11 @@ class ClientProtocol(asyncio.Protocol):
 
         cryptogram = encryptor.update(text) + encryptor.finalize()
         print("Cryptogram:", cryptogram)
+        print('IV:', iv)
 
         return cryptogram, iv
     
-    def sym_decrypt(key, cryptogram, iv=None):
+    def sym_decrypt(self, key, cryptogram, iv=None):
         if self.cipher == 'ChaCha20':
             algorithm = algorithms.ChaCha20(self.key)
         elif self.cipher == "3DES":
