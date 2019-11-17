@@ -317,10 +317,15 @@ class ClientHandler(asyncio.Protocol):
 
         shared_key = self.private_key.exchange(client_pub_key)
 
+
+        length = 32
+        if self.cipher == '3DES':
+            length = 16
+
         # Perform key derivation.
         derived_key = HKDF(
             algorithm=hashes.SHA256(),
-            length=32,
+            length=length,
             salt=None,
             info=b'handshake data',
             backend=default_backend()
@@ -384,7 +389,7 @@ class ClientHandler(asyncio.Protocol):
             return False
 
         # choose mode
-        if 'GCM' in modes:
+        if 'GCM' in modes and self.cipher == 'AES':
             self.mode = 'GCM'
         elif 'CBC' in modes:
             self.mode = 'CBC'
@@ -408,23 +413,23 @@ class ClientHandler(asyncio.Protocol):
         return True
 
     def encrypt_data(self, text):
-        iv = os.urandom(16)
-
         if self.cipher == 'ChaCha20':
+            iv = os.urandom(16)
             algorithm = algorithms.ChaCha20(self.key, iv)
         elif self.cipher == "3DES":
             algorithm = algorithms.TripleDES(self.key)
         elif self.cipher == "AES":
             algorithm = algorithms.AES(self.key)
 
-        if self.mode == 'CBC':
-            mode = modes.CBC(iv)
-        elif self.mode == "GCM":
-            mode = modes.GCM(iv)
-        elif self.mode == "ECB":
-            iv = None
-            mode = modes.ECB()
-
+        if not self.cipher == 'ChaCha20':
+            iv = os.urandom(algorithm.block_size)
+            if self.mode == 'CBC':
+                mode = modes.CBC(iv)
+            elif self.mode == "GCM":
+                mode = modes.GCM(iv)
+            elif self.mode == "ECB":
+                iv = None
+                mode = modes.ECB()
 
         if self.cipher == 'ChaCha20':
             cipher = Cipher(algorithm, mode=None, backend=default_backend())

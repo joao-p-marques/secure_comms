@@ -214,7 +214,7 @@ class ClientProtocol(asyncio.Protocol):
             message_c, iv = self.encrypt_data(json.dumps(message).encode())
             new_message = {
                     'type' : 'SECURE_MSG',
-                    'data' : message_c,
+                    'data' : message_c.decode('ascii', 'ignore'),
                     'iv' : iv
                     }
             message_b = (json.dumps(new_message) + '\r\n').encode()
@@ -260,10 +260,14 @@ class ClientProtocol(asyncio.Protocol):
 
         shared_key = self.private_key.exchange(server_pub_key)
 
+        length = 32
+        if self.cipher == '3DES':
+            length = 16
+
         # Perform key derivation.
         derived_key = HKDF(
             algorithm=hashes.SHA256(),
-            length=32,
+            length=length,
             salt=None,
             info=b'handshake data',
             backend=default_backend()
@@ -274,22 +278,23 @@ class ClientProtocol(asyncio.Protocol):
         logger.debug(f'Got key {self.key}')
 
     def encrypt_data(self, text):
-        iv = os.urandom(16)
-
         if self.cipher == 'ChaCha20':
+            iv = os.urandom(16)
             algorithm = algorithms.ChaCha20(self.key, iv)
         elif self.cipher == "3DES":
             algorithm = algorithms.TripleDES(self.key)
         elif self.cipher == "AES":
             algorithm = algorithms.AES(self.key)
 
-        if self.mode == 'CBC':
-            mode = modes.CBC(iv)
-        elif self.mode == "GCM":
-            mode = modes.GCM(iv)
-        elif self.mode == "ECB":
-            iv = None
-            mode = modes.ECB()
+        if not self.cipher == 'ChaCha20':
+            iv = os.urandom(int(algorithm.block_size / 8))
+            if self.mode == 'CBC':
+                mode = modes.CBC(iv)
+            elif self.mode == "GCM":
+                mode = modes.GCM(iv)
+            elif self.mode == "ECB":
+                iv = None
+                mode = modes.ECB()
 
         if self.cipher == 'ChaCha20':
             cipher = Cipher(algorithm, mode=None, backend=default_backend())
@@ -304,8 +309,6 @@ class ClientProtocol(asyncio.Protocol):
             text += padding
 
             cipher = Cipher(algorithm, mode, backend=default_backend())
-
-        encryptor = cipher.encryptor()
 
         encryptor = cipher.encryptor()
 
