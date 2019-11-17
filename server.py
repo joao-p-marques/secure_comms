@@ -276,8 +276,8 @@ class ClientHandler(asyncio.Protocol):
             message_c, iv = self.encrypt_data(json.dumps(message).encode())
             new_message = {
                     'type' : 'SECURE_MSG',
-                    'data' : message_c,
-                    'iv' : iv
+                    'data' : base64.b64encode(message_c).decode(),
+                    'iv' : base64.b64encode(iv).decode()
                     }
             message_b = (json.dumps(new_message) + '\r\n').encode()
             self.transport.write(message_b)
@@ -320,6 +320,13 @@ class ClientHandler(asyncio.Protocol):
 
         shared_key = self.private_key.exchange(client_pub_key)
 
+        algo = None
+        if self.hash_function == 'SHA-256':
+            algo = hashes.SHA256()
+        elif self.hash_function == 'SHA-384':
+            algo = hashes.SHA384()
+        elif self.hash_function == 'SHA-512':
+            algo = hashes.SHA512()
 
         length = 32
         if self.cipher == '3DES':
@@ -327,7 +334,7 @@ class ClientHandler(asyncio.Protocol):
 
         # Perform key derivation.
         derived_key = HKDF(
-            algorithm=hashes.SHA256(),
+            algorithm=algo,
             length=length,
             salt=None,
             info=b'handshake data',

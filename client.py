@@ -134,9 +134,12 @@ class ClientProtocol(asyncio.Protocol):
         mtype = message.get('type', None)
 
         if mtype == 'SECURE_MSG':
-            e_data = json.loads(message.get('data').decode())
-            iv = message.get('iv')
+            e_data = base64.b64decode(message.get('data'))
+            # logger.debug('Received: {}'.format(e_data))
+            iv = base64.b64decode(message.get('iv'))
+            # print(iv)
             message = self.sym_decrypt(e_data, iv)
+            message = json.loads(message.decode())
             mtype = message.get('type', None)
 
         if mtype == 'DH_INIT':
@@ -258,6 +261,14 @@ class ClientProtocol(asyncio.Protocol):
 
         logger.debug("Getting shared key")
 
+        algo = None
+        if self.sintese == 'SHA-256':
+            algo = hashes.SHA256()
+        elif self.sintese == 'SHA-384':
+            algo = hashes.SHA384()
+        elif self.sintese == 'SHA-512':
+            algo = hashes.SHA512()
+
         server_pub_key = load_pem_public_key(server_pub_key_b.encode(), default_backend())
 
         shared_key = self.private_key.exchange(server_pub_key)
@@ -268,7 +279,7 @@ class ClientProtocol(asyncio.Protocol):
 
         # Perform key derivation.
         derived_key = HKDF(
-            algorithm=hashes.SHA256(),
+            algorithm=algo,
             length=length,
             salt=None,
             info=b'handshake data',
@@ -303,11 +314,11 @@ class ClientProtocol(asyncio.Protocol):
             cipher = Cipher(algorithm, mode=None, backend=default_backend())
         else:
             bs = int(algorithm.block_size / 8)
-            print("Block size:", bs) 
+            # print("Block size:", bs) 
             missing_bytes = bs - (len(text) % bs) 
             if missing_bytes == 0:
                 missing_bytes = 16
-            print("Padding size:", missing_bytes)
+            # print("Padding size:", missing_bytes)
             padding = bytes([missing_bytes] * missing_bytes)
             text += padding
 
@@ -316,12 +327,12 @@ class ClientProtocol(asyncio.Protocol):
         encryptor = cipher.encryptor()
 
         cryptogram = encryptor.update(text) + encryptor.finalize()
-        print("Cryptogram:", cryptogram)
-        print('IV:', iv)
+        # print("Cryptogram:", cryptogram)
+        # print('IV:', iv)
 
         return cryptogram, iv
     
-    def sym_decrypt(self, key, cryptogram, iv=None):
+    def sym_decrypt(self, cryptogram, iv=None):
         if self.cipher == 'ChaCha20':
             algorithm = algorithms.ChaCha20(self.key)
         elif self.cipher == "3DES":
