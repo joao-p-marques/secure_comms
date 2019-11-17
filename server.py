@@ -132,6 +132,8 @@ class ClientHandler(asyncio.Protocol):
             ret = self.process_open(message)
         elif mtype == 'DATA':
             ret = self.process_data(message)
+        elif mtype == 'REGEN_KEY':
+            ret = self.process_data(message)
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
         elif mtype == 'NEGOTIATE':

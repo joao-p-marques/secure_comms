@@ -190,13 +190,24 @@ class ClientProtocol(asyncio.Protocol):
         :return:  None
         """
 
+        n_iterations = 0
         with open(file_name, 'rb') as f:
             message = {'type': 'DATA', 'data': None}
             read_size = 16 * 60
             while True:
+                if n_iterations == 5: 
+                    logger.info("Used the same key 5 times, getting a new one.")
+                    self.key = None
+                    self.cipher = None
+                    new_message = {'type': 'REGEN_KEY'}
+                    self._send(new_message)
+                    n_iterations = 0
+                    continue
+
                 data = f.read(16 * 60)
                 message['data'] = base64.b64encode(data).decode()
                 self._send(message)
+                n_iterations += 1
 
                 if len(data) != read_size:
                     break
