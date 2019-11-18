@@ -155,6 +155,7 @@ class ClientProtocol(asyncio.Protocol):
             mtype = message.get('type', None)
 
         if mtype == 'DH_INIT':
+            logger.info("Im also starting a new key")
             p = message.get('data').get('p')
             g = message.get('data').get('g')
             self.diffie_hellman_gen_Y(p, g)
@@ -214,9 +215,9 @@ class ClientProtocol(asyncio.Protocol):
             message = {'type': 'DATA', 'data': None}
             read_size = 16 * 60
             while True:
-                logger.info("Current Key: %s" % (self.key))
-                if n_iterations == 5: 
-                    logger.info("Used the same key 5 times, getting a new one.")
+                print("Current Key: %s" % (self.key))
+                if n_iterations == 10: 
+                    logger.info("Used the same key 10 times, getting a new one.")
                     #Aqui damos restart ao processo e alteramos a self.key
                     new_message = {'type': 'REGEN_KEY'}
                     self._send(new_message)

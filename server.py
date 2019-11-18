@@ -146,6 +146,7 @@ class ClientHandler(asyncio.Protocol):
         elif mtype == 'DATA':
             ret = self.process_data(message)
         elif mtype == 'REGEN_KEY':
+            print("Im starting a new key")
             ret = self.diffie_hellman_regen()
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
