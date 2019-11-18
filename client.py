@@ -190,6 +190,13 @@ class ClientProtocol(asyncio.Protocol):
         :return:  None
         """
 
+        # Calculate Hash and attach it to end of file
+        # https://docs.python.org/3.5/library/hmac.html
+        # https://cryptography.io/en/latest/hazmat/primitives/cryptographic-hashes/#cryptography.hazmat.primitives.hashes.HashAlgorithm
+        # https://en.wikipedia.org/wiki/HMAC#Implementation
+        # with open(file_name, 'ab') as f:
+        #    pass
+
         n_iterations = 0
         with open(file_name, 'rb') as f:
             message = {'type': 'DATA', 'data': None}
