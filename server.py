@@ -123,7 +123,7 @@ class ClientHandler(asyncio.Protocol):
             msg = message.get('msg')
 
             if self.hash_mic(json.dumps(msg).encode()) == mic:
-                logger.debug('MIC Accepted')
+                # logger.debug('MIC Accepted')
                 message = msg
                 mtype = msg.get('type')
             else:
@@ -139,6 +139,8 @@ class ClientHandler(asyncio.Protocol):
             message = json.loads(message.decode())
             mtype = message.get('type', None)
 
+        logger.debug(f"Received (decrypted): {message}")
+
         if mtype == 'DH_KEY_EXCHANGE':
             ret = self.get_key(message.get('data').get('pub_key'))
         elif mtype == 'OPEN':
@@ -146,8 +148,9 @@ class ClientHandler(asyncio.Protocol):
         elif mtype == 'DATA':
             ret = self.process_data(message)
         elif mtype == 'REGEN_KEY':
-            print("Im starting a new key")
+            # print("Im starting a new key")
             ret = self.diffie_hellman_regen()
+            ret = ret and self.diffie_hellman_gen_Y()
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
         elif mtype == 'NEGOTIATE':
@@ -479,11 +482,11 @@ class ClientHandler(asyncio.Protocol):
             cipher = Cipher(algorithm, mode=None, backend=default_backend())
         else:
             bs = int(algorithm.block_size / 8)
-            print("Block size:", bs) 
+            # print("Block size:", bs) 
             missing_bytes = bs - (len(text) % bs) 
             if missing_bytes == 0:
                 missing_bytes = 16
-            print("Padding size:", missing_bytes)
+            # print("Padding size:", missing_bytes)
             padding = bytes([missing_bytes] * missing_bytes)
             text += padding
 
@@ -492,7 +495,7 @@ class ClientHandler(asyncio.Protocol):
         encryptor = cipher.encryptor()
 
         cryptogram = encryptor.update(text) + encryptor.finalize()
-        print("Cryptogram:", cryptogram)
+        # print("Cryptogram:", cryptogram)
 
         return cryptogram, iv
     
@@ -529,7 +532,7 @@ class ClientHandler(asyncio.Protocol):
         else:
             ntext = text
 
-        print("Decrypted text:", ntext)
+        # print("Decrypted text:", ntext)
 
         return ntext
 

@@ -139,7 +139,7 @@ class ClientProtocol(asyncio.Protocol):
             msg = message.get('msg')
 
             if self.hash_mic(json.dumps(msg).encode()) == mic:
-                logger.debug('MIC Accepted')
+                # logger.debug('MIC Accepted')
                 message = msg
                 mtype = msg.get('type')
             else:
@@ -154,6 +154,8 @@ class ClientProtocol(asyncio.Protocol):
             message = self.sym_decrypt(e_data, iv)
             message = json.loads(message.decode())
             mtype = message.get('type', None)
+
+        logger.debug(f"Received (decrypted): {message}")
 
         if mtype == 'DH_INIT':
             p = message.get('data').get('p')
@@ -211,27 +213,27 @@ class ClientProtocol(asyncio.Protocol):
         # with open(file_name, 'ab') as f:
         #    pass
 
-        if self.leftover_file != None:
-            file_name = self.leftover_file
+        if self.leftover_file is None:
+            self.leftover_file = open(file_name, 'rb')
 
         file_ended = True
         n_iterations = 0
-        with open(file_name, 'rb') as f:
+        with self.leftover_file as f:
             message = {'type': 'DATA', 'data': None}
             read_size = 16 * 60
             while True:
-                print("Current Key: %s" % (self.key))
+                # print("Current Key: %s" % (self.key))
                 if n_iterations == 10: 
                     logger.info("Used the same key 10 times, getting a new one.")
                     #Aqui damos restart ao processo e alteramos a self.key
                     new_message = {'type': 'REGEN_KEY'}
 
-                    #Guardar restos dos conteudos num file
-                    f2 = open("tmp/leftover_file","w+")
-                    data = f.read()
-                    f2.write(base64.b64encode(data).decode())
-                    f2.close()
-                    self.leftover_file == 'tmp/leftover_file'
+                    ##Guardar restos dos conteudos num file
+                    #f2 = open("tmp/leftover_file","w+")
+                    #data = f.read()
+                    #f2.write(base64.b64encode(data).decode())
+                    #f2.close()
+                    #self.leftover_file == 'tmp/leftover_file'
 
                     self._send(new_message)
                     n_iterations = 0
@@ -247,7 +249,7 @@ class ClientProtocol(asyncio.Protocol):
                     break
 
             if file_ended:
-                self.leftover_file == None
+                self.leftover_file = None
                 self._send({'type': 'CLOSE'})
                 logger.info("File transferred. Closing transport")
                 self.transport.close()
@@ -417,7 +419,7 @@ class ClientProtocol(asyncio.Protocol):
         else:
             ntext = text
 
-        print("Decrypted text:", ntext)
+        # print("Decrypted text:", ntext)
 
         return ntext
 
