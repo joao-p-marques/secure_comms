@@ -19,6 +19,7 @@ STATE_CONNECT = 0
 STATE_OPEN = 1
 STATE_DATA = 2
 STATE_CLOSE = 3
+STATE_REGEN_KEY = 4
 
 class ClientProtocol(asyncio.Protocol):
     """
@@ -161,11 +162,12 @@ class ClientProtocol(asyncio.Protocol):
             p = message.get('data').get('p')
             g = message.get('data').get('g')
             self.diffie_hellman_gen_Y(p, g)
+            logger.info("Sent Key")
             return
         elif mtype == 'DH_KEY_EXCHANGE':
-            logger.info("Sent Key")
             pub_key = message.get('data').get('pub_key')
             self.get_key(pub_key)
+            self.state = STATE_OPEN
             return
         elif mtype == 'OK':  # Server replied OK. We can advance the state
             if self.state == STATE_OPEN:
@@ -214,45 +216,48 @@ class ClientProtocol(asyncio.Protocol):
         #    pass
 
         if self.leftover_file is None:
+            logger.info("Openning file")
             self.leftover_file = open(file_name, 'rb')
 
         file_ended = True
         n_iterations = 0
-        with self.leftover_file as f:
-            message = {'type': 'DATA', 'data': None}
-            read_size = 16 * 60
-            while True:
-                # print("Current Key: %s" % (self.key))
-                if n_iterations == 10: 
-                    logger.info("Used the same key 10 times, getting a new one.")
-                    #Aqui damos restart ao processo e alteramos a self.key
-                    new_message = {'type': 'REGEN_KEY'}
 
-                    ##Guardar restos dos conteudos num file
-                    #f2 = open("tmp/leftover_file","w+")
-                    #data = f.read()
-                    #f2.write(base64.b64encode(data).decode())
-                    #f2.close()
-                    #self.leftover_file == 'tmp/leftover_file'
+        message = {'type': 'DATA', 'data': None}
+        read_size = 16 * 60
+        while True:
+            # print("Current Key: %s" % (self.key))
+            if n_iterations == 10: 
+                logger.info("Used the same key 10 times, getting a new one.")
+                #Aqui damos restart ao processo e alteramos a self.key
+                new_message = {'type': 'REGEN_KEY'}
+                self.state = STATE_REGEN_KEY
 
-                    self._send(new_message)
-                    n_iterations = 0
-                    file_ended = False
-                    break
+                ##Guardar restos dos conteudos num file
+                #f2 = open("tmp/leftover_file","w+")
+                #data = f.read()
+                #f2.write(base64.b64encode(data).decode())
+                #f2.close()
+                #self.leftover_file == 'tmp/leftover_file'
 
-                data = f.read(16 * 60)
-                message['data'] = base64.b64encode(data).decode()
-                self._send(message)
-                n_iterations += 1
+                self._send(new_message)
+                n_iterations = 0
+                file_ended = False
+                break
 
-                if len(data) != read_size:
-                    break
+            data = self.leftover_file.read(16 * 60)
+            message['data'] = base64.b64encode(data).decode()
+            self._send(message)
+            n_iterations += 1
 
-            if file_ended:
-                self.leftover_file = None
-                self._send({'type': 'CLOSE'})
-                logger.info("File transferred. Closing transport")
-                self.transport.close()
+            if len(data) != read_size:
+                break
+
+        if file_ended:
+            self.leftover_file.close()
+            self.leftover_file = None
+            self._send({'type': 'CLOSE'})
+            logger.info("File transferred. Closing transport")
+            self.transport.close()
 
     def _send(self, message: str) -> None:
         """
@@ -310,6 +315,7 @@ class ClientProtocol(asyncio.Protocol):
                     }
                 }
         self._send(msg)
+        return True
 
     def get_key(self, server_pub_key_b):
 
@@ -413,7 +419,7 @@ class ClientProtocol(asyncio.Protocol):
             padding_size = text[-1]
             if padding_size >= len(text):
                 raise(Exception("Invalid padding. Larger than text"))
-            elif padding_size > algorithm.block_size / 8:
+            elif padding_size > int(algorithm.block_size / 8):
                 raise(Exception("Invalid padding. Larger than block size"))
             ntext = text[:-padding_size]
         else:

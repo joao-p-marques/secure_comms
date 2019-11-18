@@ -143,12 +143,15 @@ class ClientHandler(asyncio.Protocol):
 
         if mtype == 'DH_KEY_EXCHANGE':
             ret = self.get_key(message.get('data').get('pub_key'))
+            self._send({'type': 'OK'})
         elif mtype == 'OPEN':
             ret = self.process_open(message)
         elif mtype == 'DATA':
             ret = self.process_data(message)
         elif mtype == 'REGEN_KEY':
             # print("Im starting a new key")
+            self.parameters = None
+            self.private_key = None
             ret = self.diffie_hellman_regen()
             ret = ret and self.diffie_hellman_gen_Y()
         elif mtype == 'CLOSE':
@@ -346,6 +349,7 @@ class ClientHandler(asyncio.Protocol):
                     }
                 }
         self._send(msg)
+        return True
 
     def get_key(self, client_pub_key_b):
         # q = DIFFIE_HELLMAN_AGREED_PRIME
