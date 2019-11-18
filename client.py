@@ -238,9 +238,14 @@ class ClientProtocol(asyncio.Protocol):
                     'data' : base64.b64encode(message_c).decode(),
                     'iv' : base64.b64encode(iv).decode()
                     }
-
-            logger.debug("Send: {}".format(new_message))
-            message_b = (json.dumps(new_message) + '\r\n').encode()
+            mic = self.hash_mic(json.dumps(new_message).encode())
+            mic_message = {
+                    'type' : 'MIC',
+                    'msg' : new_message,
+                    'mic' : base64.b64encode(mic).decode()
+                    }
+            logger.debug("Send: {}".format(mic_message))
+            message_b = (json.dumps(mic_message) + '\r\n').encode()
             self.transport.write(message_b)
             return
 
@@ -386,6 +391,20 @@ class ClientProtocol(asyncio.Protocol):
         print("Decrypted text:", ntext)
 
         return ntext
+
+    def hash_mic(self, msg):
+
+        algo = None
+        if self.sintese == 'SHA-256':
+            algo = hashes.SHA256()
+        elif self.sintese == 'SHA-384':
+            algo = hashes.SHA384()
+        elif self.sintese == 'SHA-512':
+            algo = hashes.SHA512()
+
+        digest = hashes.Hash(algo, backend=default_backend())
+        digest.update(msg)
+        return digest.finalize()
 
 def main():
     parser = argparse.ArgumentParser(description='Sends files to servers.')

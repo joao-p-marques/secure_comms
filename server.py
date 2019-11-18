@@ -118,6 +118,18 @@ class ClientHandler(asyncio.Protocol):
 
         mtype = message.get('type', "").upper()
 
+        if mtype == 'MIC':
+            mic = base64.b64decode(message.get('mic'))
+            msg = message.get('msg')
+
+            if self.hash_mic(json.dumps(msg).encode()) == mic:
+                logger.debug('MIC Accepted')
+                message = msg
+                mtype = msg.get('type')
+            else:
+                logger.debug('MIC Wrong. Message compromissed')
+                return
+
         if mtype == 'SECURE_MSG':
             e_data = base64.b64decode(message.get('data'))
             # logger.debug('Received: {}'.format(e_data))
@@ -512,6 +524,20 @@ class ClientHandler(asyncio.Protocol):
         print("Decrypted text:", ntext)
 
         return ntext
+
+    def hash_mic(self, msg):
+
+        algo = None
+        if self.hash_function == 'SHA-256':
+            algo = hashes.SHA256()
+        elif self.hash_function == 'SHA-384':
+            algo = hashes.SHA384()
+        elif self.hash_function == 'SHA-512':
+            algo = hashes.SHA512()
+
+        digest = hashes.Hash(algo, backend=default_backend())
+        digest.update(msg)
+        return digest.finalize()
 
 def main():
     global storage_dir
