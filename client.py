@@ -195,10 +195,10 @@ class ClientProtocol(asyncio.Protocol):
             message = {'type': 'DATA', 'data': None}
             read_size = 16 * 60
             while True:
+                logger.info("Current Key: %s" % (self.key))
                 if n_iterations == 5: 
                     logger.info("Used the same key 5 times, getting a new one.")
-                    self.key = None
-                    self.cipher = None
+                    #Aqui damos restart ao processo e alteramos a self.key
                     new_message = {'type': 'REGEN_KEY'}
                     self._send(new_message)
                     n_iterations = 0

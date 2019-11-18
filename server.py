@@ -20,6 +20,7 @@ STATE_CONNECT = 0
 STATE_OPEN = 1
 STATE_DATA = 2
 STATE_CLOSE= 3
+STATE_REGEN_KEY = 4
 
 #GLOBAL
 storage_dir = 'files'
@@ -133,7 +134,7 @@ class ClientHandler(asyncio.Protocol):
         elif mtype == 'DATA':
             ret = self.process_data(message)
         elif mtype == 'REGEN_KEY':
-            ret = self.process_data(message)
+            ret = self.diffie_hellman_regen()
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
         elif mtype == 'NEGOTIATE':
@@ -217,7 +218,7 @@ class ClientHandler(asyncio.Protocol):
             self.state = STATE_DATA
             # First Packet
 
-        elif self.state == STATE_DATA:
+        elif self.state == STATE_DATA or self.state == STATE_REGEN_KEY:
             # Next packets
             pass
 
@@ -295,6 +296,17 @@ class ClientHandler(asyncio.Protocol):
         parameter_numbers = self.parameters.parameter_numbers()
         # msg = { 'type' : 'DH_INIT', 'data' : { 'params' : parameters.parameter_bytes(Encoding.PEM, ParameterFormat.PKCS3).decode() }}
         msg = { 'type' : 'DH_INIT', 'data' : { 'p' : parameter_numbers.p, 'g' : parameter_numbers.g }}
+        self._send(msg)
+        return True
+
+    def diffie_hellman_regen(self):
+        logger.debug("Regening Diffie-Hellman")
+        self.parameters = dh.generate_parameters(generator=2, key_size=1024,
+                                            backend=default_backend())
+        parameter_numbers = self.parameters.parameter_numbers()
+        # msg = { 'type' : 'DH_INIT', 'data' : { 'params' : parameters.parameter_bytes(Encoding.PEM, ParameterFormat.PKCS3).decode() }}
+        msg = { 'type' : 'DH_INIT', 'data' : { 'p' : parameter_numbers.p, 'g' : parameter_numbers.g }}
+        self.state = STATE_REGEN_KEY
         self._send(msg)
         return True
 
