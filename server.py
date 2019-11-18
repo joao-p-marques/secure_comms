@@ -465,7 +465,7 @@ class ClientHandler(asyncio.Protocol):
             algorithm = algorithms.AES(self.key)
 
         if not self.cipher == 'ChaCha20':
-            iv = os.urandom(algorithm.block_size)
+            iv = os.urandom(int(algorithm.block_size / 8))
             if self.mode == 'CBC':
                 mode = modes.CBC(iv)
             elif self.mode == "GCM":
