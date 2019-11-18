@@ -33,6 +33,7 @@ class ClientProtocol(asyncio.Protocol):
         """
 
         self.file_name = file_name
+        self.leftover_file = None
         self.loop = loop
         self.state = STATE_CONNECT  # Initial State
         self.buffer = ''  # Buffer to receive data chunks
@@ -155,12 +156,12 @@ class ClientProtocol(asyncio.Protocol):
             mtype = message.get('type', None)
 
         if mtype == 'DH_INIT':
-            logger.info("Im also starting a new key")
             p = message.get('data').get('p')
             g = message.get('data').get('g')
             self.diffie_hellman_gen_Y(p, g)
             return
         elif mtype == 'DH_KEY_EXCHANGE':
+            logger.info("Sent Key")
             pub_key = message.get('data').get('pub_key')
             self.get_key(pub_key)
             return
@@ -210,6 +211,10 @@ class ClientProtocol(asyncio.Protocol):
         # with open(file_name, 'ab') as f:
         #    pass
 
+        if self.leftover_file != None:
+            file_name = self.leftover_file
+
+        file_ended = True
         n_iterations = 0
         with open(file_name, 'rb') as f:
             message = {'type': 'DATA', 'data': None}
@@ -220,9 +225,18 @@ class ClientProtocol(asyncio.Protocol):
                     logger.info("Used the same key 10 times, getting a new one.")
                     #Aqui damos restart ao processo e alteramos a self.key
                     new_message = {'type': 'REGEN_KEY'}
+
+                    #Guardar restos dos conteudos num file
+                    f2 = open("tmp/leftover_file","w+")
+                    data = f.read()
+                    f2.write(base64.b64encode(data).decode())
+                    f2.close()
+                    self.leftover_file == 'tmp/leftover_file'
+
                     self._send(new_message)
                     n_iterations = 0
-                    continue
+                    file_ended = False
+                    break
 
                 data = f.read(16 * 60)
                 message['data'] = base64.b64encode(data).decode()
@@ -232,9 +246,11 @@ class ClientProtocol(asyncio.Protocol):
                 if len(data) != read_size:
                     break
 
-            self._send({'type': 'CLOSE'})
-            logger.info("File transferred. Closing transport")
-            self.transport.close()
+            if file_ended:
+                self.leftover_file == None
+                self._send({'type': 'CLOSE'})
+                logger.info("File transferred. Closing transport")
+                self.transport.close()
 
     def _send(self, message: str) -> None:
         """
@@ -370,7 +386,7 @@ class ClientProtocol(asyncio.Protocol):
     
     def sym_decrypt(self, cryptogram, iv=None):
         if self.cipher == 'ChaCha20':
-            algorithm = algorithms.ChaCha20(self.key)
+            algorithm = algorithms.ChaCha20(self.key,iv)
         elif self.cipher == "3DES":
             algorithm = algorithms.TripleDES(self.key)
         elif self.cipher == "AES":
