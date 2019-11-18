@@ -133,6 +133,18 @@ class ClientProtocol(asyncio.Protocol):
 
         mtype = message.get('type', None)
 
+        if mtype == 'MIC':
+            mic = base64.b64decode(message.get('mic'))
+            msg = message.get('msg')
+
+            if self.hash_mic(json.dumps(msg).encode()) == mic:
+                logger.debug('MIC Accepted')
+                message = msg
+                mtype = msg.get('type')
+            else:
+                logger.debug('MIC Wrong. Message compromissed')
+                return
+
         if mtype == 'SECURE_MSG':
             e_data = base64.b64decode(message.get('data'))
             # logger.debug('Received: {}'.format(e_data))

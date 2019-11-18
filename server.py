@@ -294,7 +294,14 @@ class ClientHandler(asyncio.Protocol):
                     'data' : base64.b64encode(message_c).decode(),
                     'iv' : base64.b64encode(iv).decode()
                     }
-            message_b = (json.dumps(new_message) + '\r\n').encode()
+            mic = self.hash_mic(json.dumps(new_message).encode())
+            mic_message = {
+                    'type' : 'MIC',
+                    'msg' : new_message,
+                    'mic' : base64.b64encode(mic).decode()
+                    }
+            logger.debug("Send: {}".format(mic_message))
+            message_b = (json.dumps(mic_message) + '\r\n').encode()
             self.transport.write(message_b)
             return
 
