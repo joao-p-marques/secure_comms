@@ -21,6 +21,8 @@ STATE_DATA = 2
 STATE_CLOSE = 3
 STATE_REGEN_KEY = 4
 
+KEY_TTL = 100
+
 class ClientProtocol(asyncio.Protocol):
     """
     Client that handles a single client
@@ -226,8 +228,8 @@ class ClientProtocol(asyncio.Protocol):
         read_size = 16 * 60
         while True:
             # print("Current Key: %s" % (self.key))
-            if n_iterations == 10: 
-                logger.info("Used the same key 10 times, getting a new one.")
+            if n_iterations == KEY_TTL: 
+                logger.info(f"Used the same key {KEY_TTL} times, getting a new one.")
                 #Aqui damos restart ao processo e alteramos a self.key
                 new_message = {'type': 'REGEN_KEY'}
                 self.state = STATE_REGEN_KEY
