@@ -378,7 +378,7 @@ class ClientHandler(asyncio.Protocol):
         # Perform key derivation.
         derived_key = HKDF(
             algorithm=algo,
-            length=length,
+            length=length*2,
             salt=None,
             info=b'handshake data',
             backend=default_backend()
