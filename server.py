@@ -387,6 +387,7 @@ class ClientHandler(asyncio.Protocol):
         self.key = derived_key
 
         logger.debug(f'Got key {self.key}')
+        logger.debug(f'For encryption: {self.key[len(self.key)//2:]}.\nFor MAC: {self.key[:len(self.key)//2]}')
         return True
 
     def process_negotiate(self, message: str) -> bool:
@@ -466,13 +467,14 @@ class ClientHandler(asyncio.Protocol):
         return True
 
     def encrypt_data(self, text):
+        key = self.key[:len(self.key)//2]
         if self.cipher == 'ChaCha20':
             iv = os.urandom(16)
-            algorithm = algorithms.ChaCha20(self.key, iv)
+            algorithm = algorithms.ChaCha20(key, iv)
         elif self.cipher == "3DES":
-            algorithm = algorithms.TripleDES(self.key)
+            algorithm = algorithms.TripleDES(key)
         elif self.cipher == "AES":
-            algorithm = algorithms.AES(self.key)
+            algorithm = algorithms.AES(key)
 
         if not self.cipher == 'ChaCha20':
             iv = os.urandom(int(algorithm.block_size / 8))
@@ -506,12 +508,13 @@ class ClientHandler(asyncio.Protocol):
         return cryptogram, iv
     
     def sym_decrypt(self, cryptogram, iv=None):
+        key = self.key[:len(self.key)//2]
         if self.cipher == 'ChaCha20':
-            algorithm = algorithms.ChaCha20(self.key, iv)
+            algorithm = algorithms.ChaCha20(key, iv)
         elif self.cipher == "3DES":
-            algorithm = algorithms.TripleDES(self.key)
+            algorithm = algorithms.TripleDES(key)
         elif self.cipher == "AES":
-            algorithm = algorithms.AES(self.key)
+            algorithm = algorithms.AES(key)
 
         if self.mode == 'CBC':
             mode = modes.CBC(iv)
@@ -566,7 +569,7 @@ class ClientHandler(asyncio.Protocol):
         elif self.hash_function == 'SHA-512':
             algo = hashes.SHA512()
 
-        digest = hmac.HMAC(self.key, algo, backend=default_backend())
+        digest = hmac.HMAC(self.key[len(self.key)//2:], algo, backend=default_backend())
         digest.update(msg)
         return digest.finalize()
 
@@ -579,7 +582,7 @@ class ClientHandler(asyncio.Protocol):
         elif self.hash_function == 'SHA-512':
             algo = hashes.SHA512()
 
-        digest = hmac.HMAC(self.key, algo, backend=default_backend())
+        digest = hmac.HMAC(self.key[len(self.key)//2:], algo, backend=default_backend())
         digest.update(msg)
 
         try:
