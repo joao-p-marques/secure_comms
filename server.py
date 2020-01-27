@@ -8,7 +8,7 @@ import os
 from aio_tcpserver import tcp_server
 
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.serialization import Encoding, ParameterFormat, PublicFormat, load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric import dh
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -118,16 +118,17 @@ class ClientHandler(asyncio.Protocol):
 
         mtype = message.get('type', "").upper()
 
-        if mtype == 'MIC':
-            mic = base64.b64decode(message.get('mic'))
+        if mtype == 'MAC':
+            mac = base64.b64decode(message.get('mac'))
             msg = message.get('msg')
 
-            if self.hash_mic(json.dumps(msg).encode()) == mic:
-                # logger.debug('MIC Accepted')
+            # if self.hash_mic(json.dumps(msg).encode()) == mic:
+            if self.verify_mac(json.dumps(msg).encode(), mac):
+                # logger.debug('MAC Accepted')
                 message = msg
                 mtype = msg.get('type')
             else:
-                logger.debug('MIC Wrong. Message compromissed')
+                logger.debug('MAC Wrong. Message compromissed')
                 return
 
         if mtype == 'SECURE_MSG':
@@ -301,14 +302,15 @@ class ClientHandler(asyncio.Protocol):
                     'data' : base64.b64encode(message_c).decode(),
                     'iv' : base64.b64encode(iv).decode()
                     }
-            mic = self.hash_mic(json.dumps(new_message).encode())
-            mic_message = {
-                    'type' : 'MIC',
+            # mic = self.hash_mic(json.dumps(new_message).encode())
+            mac = self.hash_mac(json.dumps(new_message).encode())
+            mac_message = {
+                    'type' : 'MAC',
                     'msg' : new_message,
-                    'mic' : base64.b64encode(mic).decode()
+                    'mac' : base64.b64encode(mac).decode()
                     }
-            logger.debug("Send: {}".format(mic_message))
-            message_b = (json.dumps(mic_message) + '\r\n').encode()
+            logger.debug("Send: {}".format(mac_message))
+            message_b = (json.dumps(mac_message) + '\r\n').encode()
             self.transport.write(message_b)
             return
 
@@ -553,6 +555,38 @@ class ClientHandler(asyncio.Protocol):
         digest = hashes.Hash(algo, backend=default_backend())
         digest.update(msg)
         return digest.finalize()
+
+    def hash_mac(self, msg):
+
+        algo = None
+        if self.hash_function == 'SHA-256':
+            algo = hashes.SHA256()
+        elif self.hash_function == 'SHA-384':
+            algo = hashes.SHA384()
+        elif self.hash_function == 'SHA-512':
+            algo = hashes.SHA512()
+
+        digest = hmac.HMAC(self.key, algo, backend=default_backend())
+        digest.update(msg)
+        return digest.finalize()
+
+    def verify_mac(self, msg, to_verify):
+        algo = None
+        if self.hash_function == 'SHA-256':
+            algo = hashes.SHA256()
+        elif self.hash_function == 'SHA-384':
+            algo = hashes.SHA384()
+        elif self.hash_function == 'SHA-512':
+            algo = hashes.SHA512()
+
+        digest = hmac.HMAC(self.key, algo, backend=default_backend())
+        digest.update(msg)
+
+        try:
+            digest.verify(to_verify)
+            return True
+        except:
+            return False
 
 def main():
     global storage_dir
